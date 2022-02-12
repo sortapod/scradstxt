@@ -26,6 +26,7 @@ const (
 	minCrawlersCount = 4
 	defaultCrawlersCount = 64
 	crawlerTimeout = 5 //seconds
+	dbConnectionString = "host=/var/run/postgresql dbname=adstxt"  // use unix socket for connection
 )
 
 type ReqRes struct {
@@ -90,6 +91,7 @@ func getAds(sites chan Site, res chan ReqRes, wg * sync.WaitGroup) {
 			
 			req, err := http.NewRequest("GET", urlPref + site.site + urlSuffix, nil)
 			req.Header.Add("User-Agent", "Mediapartners-Google")
+			req.Close = true
 			resp, err := c.Do(req)
 			if err != nil {
 				if err, ok := err.(*url.Error); ok {
@@ -342,7 +344,7 @@ func main() {
 
     if len(fname) != 0 {
     	
-    	db, err := sql.Open("postgres", "host=/var/run/postgresql dbname=adstxt")  // use unix socket for connection
+    	db, err := sql.Open("postgres", dbConnectionString)
     	if err != nil {
         	panic(err)
     	} 
@@ -370,3 +372,5 @@ func main() {
 		fmt.Println(string(rr.respBody))
 	}
 }
+
+//select s.siteid,s.siteaddr from scanresult r right join site s on r.siteid=s.siteid where r.siteid is null order by siteid;

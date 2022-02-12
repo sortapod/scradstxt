@@ -5,7 +5,7 @@ Give it a file with CSV list of sites to check (rank,site.url). I use top 1M sit
 
 Scraper first checks HTTPS schema, if connection fails then fallback to HTTP. User-agent is spoofed. Timeout is 5 sec defined by const crawlerTimeout.
 
-User who runs this program must have a ROLE in PostgreSQL allowing SELECT, INSERT, DELETE queries on working database. Program connects to the database via unix socket. Adjust connection string in sources if TCP or another DB name or another authentication method used.
+User who runs this program must have a ROLE in PostgreSQL allowing SELECT, INSERT, DELETE queries on working database. Program connects to the database via unix socket. Adjust dbConnectionString constant if TCP or another DB name or another authentication method used.
 PostgreSQL database is named adstxt.
 ```sh
 sudo -u postgres psql -c 'CREATE DATABASE adstxt'
