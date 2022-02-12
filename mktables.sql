@@ -3,6 +3,8 @@ siteid serial primary key,
 siteaddr varchar(255),
 arank integer);
 
+CREATE UNIQUE INDEX idx_siteaddr ON site (siteaddr);
+
 CREATE TABLE scanresult(
 scanid serial primary key,
 siteid integer REFERENCES site (siteid),
