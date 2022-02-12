@@ -70,9 +70,10 @@ func parseAdsLine(line string) (Publisher, bool) {
 	re := regexp.MustCompile(`[a-z0-9.-]*`) //valid domain name chars
 	re.Longest()
 	adVendor := re.FindString(strings.ToLower(strings.TrimSpace(parts[0])))
-	publisherId := strings.TrimSpace(parts[1])
+	reASCIIPrintable := regexp.MustCompile(`[\x21-\x7F]*`)//drop "strange" ids
+	publisherId := reASCIIPrintable.FindString(strings.TrimSpace(parts[1]))
 	
-	if len(adVendor) == 0 || len(adVendor) > 70 || len(publisherId) == 0 {
+	if len(adVendor) == 0 || len(adVendor) > 70 || len(publisherId) == 0 || len(publisherId) > 70{
 		return r, false
 	}
 	
