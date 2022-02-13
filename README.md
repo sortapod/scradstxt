@@ -27,3 +27,7 @@ By default 64 goroutines run to fetch ads.txt from sites. This number can be inc
 ```sh
 go run main.go top-1k.csv 1000
 ```
+The third argument is continuation flag. If previous scraping was not finished, it's possible to continue scraping in the next run of the program by specifying flag `c` - continue. As arguments are positional then goroutines count parameter becomes mandatory for continuation flag to work.
+```sh
+go run main.go top-1k.csv 64 c
+```
