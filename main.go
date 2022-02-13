@@ -124,9 +124,30 @@ func getAds(sites chan Site, res chan ReqRes, wg * sync.WaitGroup) {
 	}
 }
 
-func loadSitesList(fname string, db * sql.DB, sites chan Site) {
+func loadSitesList(fname string, db * sql.DB, sites chan Site, continueScraping bool) {
 	//reads file, adds to DB sites if not there already,
 	//pass to channel with urls and ids
+	//if continueScraping then first load "unscraped" sites from DB
+	//and skip already scraped sites (all in given file before "unscraped")
+	
+	unscrapedSites := make(map[string]int)  // [siteaddr]=siteid
+	
+	if continueScraping {
+		rows, err := db.Query("SELECT s.siteid,s.siteaddr FROM scanresult r RIGHT JOIN site s ON r.siteid=s.siteid WHERE r.siteid IS NULL ORDER BY siteid")
+		if err != nil {
+    		panic(err)
+		}
+		
+		for rows.Next() {
+			r := Site{}
+			err := rows.Scan(&r.siteid, &r.site)
+			if err == nil {
+    			unscrapedSites[r.site] = r.siteid
+			}
+		}
+		rows.Close()
+	}
+	
 	f, err := os.Open(fname)
 	defer f.Close()
 	defer close(sites)
@@ -140,6 +161,17 @@ func loadSitesList(fname string, db * sql.DB, sites chan Site) {
 	for line, _, _ := rdr.ReadLine(); line != nil; line, _, _ = rdr.ReadLine(){
 		var id int
 		parts := strings.Split(string(line), ",")//parts[0] - position, parts[1] - site
+		
+		if continueScraping {
+			if len(unscrapedSites) > 0 {
+				if siteid, found := unscrapedSites[parts[1]]; found {
+					sites <- Site{siteid, parts[1]}
+					delete(unscrapedSites, parts[1])
+				}
+				continue
+			}
+		}
+		
 		err := db.QueryRow("SELECT siteid FROM site WHERE siteaddr=$1",parts[1]).Scan(&id)
 		if err != nil {//need to add
 			var arank int
@@ -316,9 +348,11 @@ func storeScanRes(sr chan ReqRes, db * sql.DB, done chan struct{}){
 	fmt.Println("\nFinished receiver",time.Now().Format("2006-01-02 15:04:05"))
 }
 
-func main() {
+func parseArgs() (string, int, bool) {//filename, crawlersCount, continueScraping
 	fname := ""
 	crawlersCount := defaultCrawlersCount
+	cs := false
+	
 	argsOffset := 0
     if os.Args[0] == "go" { // go run thisProgram filenameIsArg[3]
     	argsOffset = 2
@@ -337,6 +371,20 @@ func main() {
     		}
     	}
     }
+
+    if len(os.Args) > 3 + argsOffset {
+    	if strings.ToLower(os.Args[3 + argsOffset]) == "c" {
+    		cs = true
+    	}
+    }
+
+    return fname, crawlersCount, cs
+}
+
+
+func main() {
+	
+	fname, crawlersCount, continueScraping := parseArgs()
     
 	src := make(chan Site, crawlersCount)
 	res := make(chan ReqRes, crawlersCount)
@@ -357,7 +405,7 @@ func main() {
     		go getAds(src,res, &wg)
     	}
 
-    	go loadSitesList(fname, db, src)
+    	go loadSitesList(fname, db, src, continueScraping)
     	go storeScanRes(res, db, saved)
     	
     	wg.Wait()  // wait for all crawl results are fed into channel
@@ -372,5 +420,3 @@ func main() {
 		fmt.Println(string(rr.respBody))
 	}
 }
-
-//select s.siteid,s.siteaddr from scanresult r right join site s on r.siteid=s.siteid where r.siteid is null order by siteid;
