@@ -3,7 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"syscall"
+	"os/signal"
 	"io"
+	"log"
 	"bytes"
 	"sync"
 	"strings"
@@ -124,7 +127,7 @@ func getAds(sites chan Site, res chan ReqRes, wg * sync.WaitGroup) {
 	}
 }
 
-func loadSitesList(fname string, db * sql.DB, sites chan Site, continueScraping bool) {
+func loadSitesList(fname string, db * sql.DB, sites chan Site, continueScraping bool, sigInt chan os.Signal) {
 	//reads file, adds to DB sites if not there already,
 	//pass to channel with urls and ids
 	//if continueScraping then first load "unscraped" sites from DB
@@ -189,6 +192,15 @@ func loadSitesList(fname string, db * sql.DB, sites chan Site, continueScraping 
 		}
 		
 		sites <- Site{id, parts[1]}
+		
+		select {
+		case sig := <- sigInt:
+			fmt.Println("Got signal",sig)
+			fmt.Println("Last line to process:",string(line))
+			return
+		default:
+			continue
+		}
 	}
 }
 
@@ -328,19 +340,19 @@ func storeScanRes(sr chan ReqRes, db * sql.DB, done chan struct{}){
 		}
 		
 		valuesPlaceholders := make([]string, len(publishers))
-    	insertVals := make([]interface{}, len(publishers) * 3)
-
-    	for i, pu := range publishers {
-        	valuesPlaceholders[i] = fmt.Sprintf("($%d, $%d, $%d)",
+		insertVals := make([]interface{}, len(publishers) * 3)
+		
+		for i, pu := range publishers {
+    		valuesPlaceholders[i] = fmt.Sprintf("($%d, $%d, $%d)",
         							i * 3 + 1, i * 3 + 2, i * 3 + 3)
-        	insertVals[i * 3 + 0] = pu.advid
-        	insertVals[i * 3 + 1] = r.site.siteid
-        	insertVals[i * 3 + 2] = pu.publisherid
-    	}
-    	insertQuery := fmt.Sprintf("INSERT INTO publisher (pavid, siteid, publisherid) VALUES %s",
+    		insertVals[i * 3 + 0] = pu.advid
+    		insertVals[i * 3 + 1] = r.site.siteid
+    		insertVals[i * 3 + 2] = pu.publisherid
+		}
+		insertQuery := fmt.Sprintf("INSERT INTO publisher (pavid, siteid, publisherid) VALUES %s",
     								strings.Join(valuesPlaceholders, ","))
-    	_, err = db.Exec(insertQuery, insertVals...)
-    	if err != nil {// failed insert
+		_, err = db.Exec(insertQuery, insertVals...)
+		if err != nil {// failed insert
 			fmt.Println(err)
 			return
 		}
@@ -383,15 +395,27 @@ func parseArgs() (string, int, bool) {//filename, crawlersCount, continueScrapin
 
 
 func main() {
-	
+
 	fname, crawlersCount, continueScraping := parseArgs()
     
 	src := make(chan Site, crawlersCount)
 	res := make(chan ReqRes, crawlersCount)
 	saved := make(chan struct{})  //channel to wait goroutine storeScanRes finished 
+	sigs := make(chan os.Signal, 1) //channel to intercept signals and graceful shutdown
+	
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
     if len(fname) != 0 {
-    	
+    	logFile, err := os.OpenFile("scradstxt.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			panic(err)
+		}
+		defer logFile.Close()
+		
+		// send 'Unsolicited response received on idle HTTP channel' to file
+		// instead of stderr to mitigate https://github.com/golang/go/issues/19895
+		log.SetOutput(logFile)
+    		
     	db, err := sql.Open("postgres", dbConnectionString)
     	if err != nil {
         	panic(err)
@@ -405,7 +429,7 @@ func main() {
     		go getAds(src,res, &wg)
     	}
 
-    	go loadSitesList(fname, db, src, continueScraping)
+    	go loadSitesList(fname, db, src, continueScraping, sigs)
     	go storeScanRes(res, db, saved)
     	
     	wg.Wait()  // wait for all crawl results are fed into channel
@@ -417,6 +441,8 @@ func main() {
 		src <- Site{0,"rbc.ru"}
 
 		rr := <-res
+		fmt.Println("Fetched ads.txt from sample site")
 		fmt.Println(string(rr.respBody))
+		fmt.Println("Specify file with list of sites as program argument")
 	}
 }
