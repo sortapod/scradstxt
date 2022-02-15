@@ -191,15 +191,15 @@ func loadSitesList(fname string, db * sql.DB, sites chan Site, continueScraping 
 			return
 		}
 		
-		sites <- Site{id, parts[1]}
+		
 		
 		select {
 		case sig := <- sigInt:
-			fmt.Println("Got signal",sig)
-			fmt.Println("Last line to process:",string(line))
+			fmt.Println("\nGot signal",sig)
+			fmt.Println("Last line:",string(line))
 			return
 		default:
-			continue
+			sites <- Site{id, parts[1]}
 		}
 	}
 }
